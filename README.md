@@ -1,7 +1,7 @@
-ArduinoNano, SPI, DAC
+ArduinoNano, SPI, 12bit-DAC
 =====================
 
-Connect ArduinoNano via SPI with a MCP4921, a digital to analog converter (DAC).
+Connect ArduinoNano via SPI with a MCP4921, a 12-bit digital to analog converter (DAC).
 One can send numbers [0,4095] via arduino IDE "Serial Monitor" that will set the 
 DAC which will than output the corresponding [0..~5] voltage on its output. 
 
