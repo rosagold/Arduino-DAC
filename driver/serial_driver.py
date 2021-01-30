@@ -6,7 +6,24 @@ import random
 ser = serial.Serial()
 
 
-def serial_setup(port='/dev/ttyUSB0'):
+def serial_setup(port=None):
+    """
+
+    Parameters
+    ----------
+    port: str, default None
+        path to port eg. `"/dev/ttyUSB0"`. If None,
+        try to automatically find a ArduinoNano connected via USB
+        and use this port.
+
+    Returns
+    -------
+    ser: serial
+
+    """
+    if port is None:
+        port = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
+
     ser.port = port
     ser.baudrate = 256000
     ser.parity = serial.PARITY_NONE
@@ -23,6 +40,7 @@ def serial_setup(port='/dev/ttyUSB0'):
 
     ser.reset_input_buffer()
     ser.reset_output_buffer()
+    return ser
 
 
 def make_msg(ch, val):
