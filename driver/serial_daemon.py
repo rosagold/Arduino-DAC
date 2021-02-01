@@ -31,7 +31,7 @@ def daemon_code():
         specific purpose, which is fulfilled with its end. Otherwise a infinite
         loop should be entered.
     """
-    import driver.serial_driver_as_class as sd
+    import serial_driver_as_class as sd
     drv = sd.SerialDriver(force=True)
     drv.run()  # no return
 
@@ -98,7 +98,7 @@ def start_daemon():
     # daemonize the current(!) process,
     # but we don't want to be it, because
     # we could not run more code then..
-    p = Process(target=start)
+    p = Process(target=start, name="some_foo")
     p.start()
     p.join(1)
 

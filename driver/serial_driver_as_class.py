@@ -1,7 +1,7 @@
 import serial
 import time
 import numpy as np
-from driver.common import _max_chanels
+from common import _max_chanels
 import logging
 
 log = logging.getLogger()
@@ -56,15 +56,15 @@ class SerialDriver:
         while True:
             ch = 0
             val = self.channels[ch]
-            msg = f'{ch},{val}\n'.encode()
-            self.ser.write(msg)
+            msg = f'{ch},{val}\n'
+            print(msg, end='')
+            self.ser.write(msg.encode())
 
             time.sleep(0.001)
 
-            # todo log this
-            # a = self._get_answer()
-            # if a is not None:
-            #     print(a)
+            a = self._get_answer()
+            if a is not None:
+                print(a)
 
     def __del__(self):
         try:
