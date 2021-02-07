@@ -1,37 +1,47 @@
 import atexit
 from multiprocessing.shared_memory import ShareableList, SharedMemory
-from common import _max_channels
+from driver.common import _max_channels
+import numpy as np
 
 _default_name = 'default_shared_list'
 
 
 class _SharedChannels:
 
-    def __init__(self, name=None):
+    def __init__(self, name=None, dtype=np.int16):
 
         if name is None:
             name = _default_name
 
+        # we want to keep track how many clients have access
+        # to the shared memory, so we hold this information
+        # in the shared memory itself.
+        cl = np.array([0], dtype=np.int32)
+        ch_arr = np.array([0]*_max_channels, dtype=dtype)
+        nbytes = ch_arr.nbytes + cl.nbytes
+
         try:
-
-            l = [0] * _max_channels
-            shared = ShareableList(l, name=name)
-            clients = ShareableList([0], name=name + '_cl')
-
+            shm = SharedMemory(create=True, size=nbytes, name=name)
+            init = True
         except FileExistsError:
+            shm = SharedMemory(name=name)
+            init = False
 
-            shared = ShareableList(None, name=name)
-            clients = ShareableList(None, name=name + '_cl')
+        # make numpy arrays for easy access
+        ch_arr = np.ndarray(ch_arr.shape, dtype=ch_arr.dtype, buffer=shm.buf[cl.nbytes:])
+        cl = np.ndarray(cl.shape, dtype=cl.dtype, buffer=shm.buf)
+
+        if init:
+            ch_arr[:] = 0
+            cl[:] = 0
 
         # shared memory channels
-        self._channels = shared
+        self._shm = shm
+        self._channels = ch_arr
+        self._clients = cl
 
-        # keep track how many clients have access
-        # to the shared memory. this is also stored
-        # in shared memory.
-        self._clients = clients
-        self._clients[0] += 1
-
+        # we're a client
+        self._clients += 1
         self._dead = False
         atexit.register(self._cleanup)
 
@@ -45,19 +55,20 @@ class _SharedChannels:
 
     def _cleanup(self):
         # prevent double cleanup
+        print('cleanup called')
         if self._dead:
             return
+        print('do cleanup')
         self._dead = True
 
-        self._clients[0] -= 1
+        self._clients -= 1
         clients = self.clients
 
-        self._clients.shm.close()
-        self._channels.shm.close()
+        self._shm.close()
 
         if clients == 0:
-            self._clients.shm.unlink()
-            self._channels.shm.unlink()
+            print('unlink called')
+            self._shm.unlink()
 
     def __del__(self):
         self._cleanup()
