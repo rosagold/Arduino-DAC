@@ -53,7 +53,7 @@ class SerialDriver:
 
         if shared_channels:
             from driver.channels import _SharedChannels
-            mem_obj = _SharedChannels()
+            mem_obj = _SharedChannels(create=True)
             channels = mem_obj.channels
         else:
             mem_obj = np.zeros(_max_channels, dtype=int)
@@ -92,9 +92,9 @@ class SerialDriver:
             if (asw := self._get_answer()) is not None:
                 print(asw)
 
-    def __del__(self):
+    def close(self):
         try:
-            del self.channels
+            self._mem_obj.close()
         except Exception:
             pass
         try:
@@ -102,12 +102,20 @@ class SerialDriver:
         except Exception:
             pass
 
-    def close(self):
-        # this just calls,
-        # does not delete
-        self.__del__()
+    def __del__(self):
+        self.close()
 
 
 if __name__ == '__main__':
+    # import sys
+    # import os
+    # print(os.isatty(0))
+    # print(sys.__stdin__.isatty())
+    # print(sys.__stdout__.isatty())
+    import signal
+    logging.basicConfig(level=logging.DEBUG)
     s = SerialDriver(shared_channels=True)
-    s.run()
+    try:
+        s.run()
+    finally:
+        s.close()
