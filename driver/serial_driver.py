@@ -1,12 +1,14 @@
-import time
-
 import serial
-import random
+import time
+import numpy as np
+from common import _max_channels
+import logging
+import atexit
 
-ser = serial.Serial()
+logger = logging.getLogger(__name__)
 
 
-def serial_setup(port=None):
+class SerialDriver:
     """
 
     Parameters
@@ -18,67 +20,94 @@ def serial_setup(port=None):
 
     Returns
     -------
-    ser: serial
+    ser: SerialDriver
 
     """
-    if port is None:
-        port = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
 
-    ser.port = port
-    ser.baudrate = 256000
-    ser.parity = serial.PARITY_NONE
-    ser.stopbits = serial.STOPBITS_ONE
-    ser.bytesize = serial.EIGHTBITS
+    def __init__(self, force=False, shared_channels=False, **kwargs):
+        default_port = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
 
-    # read time out in sec
-    ser.timeout = 0.5
+        # if port is passed as kwarg the port is opened
+        # in init, but we want to have more control
+        port = kwargs.pop("port", default_port)
 
-    ser.close()
-    ser.open()
+        kwargs.setdefault('baudrate', 256000)
+        kwargs.setdefault('parity', serial.PARITY_NONE)
+        kwargs.setdefault('stopbits', serial.STOPBITS_ONE)
+        kwargs.setdefault('bytesize', serial.EIGHTBITS)
+        kwargs.setdefault('timeout', 0.5)  # for read, in sec
 
-    assert ser.is_open, "After initialisation serial port is still closed."
+        ser = serial.Serial(**kwargs)
+        ser.port = port
 
-    ser.reset_input_buffer()
-    ser.reset_output_buffer()
-    return ser
+        if force and ser.is_open:
+            ser.close()
 
+        ser.open()
 
-def make_msg(ch, val):
-    print(val)
-    msg = f'{ch},{val}\n'
-    return msg.encode()
+        if not ser.is_open:
+            raise RuntimeError("After initialisation serial port is still closed.")
 
+        ser.reset_input_buffer()
+        ser.reset_output_buffer()
 
-def send_msg(m):
-    ser.write(m)
+        if shared_channels:
+            from driver.channels import _SharedChannels
+            mem_obj = _SharedChannels()
+            channels = mem_obj.channels
+        else:
+            mem_obj = np.zeros(_max_channels, dtype=int)
+            channels = mem_obj
 
+        self.ser = ser
+        self._mem_obj = mem_obj
+        self.channels = channels
 
-def get_answer():
-    if ser.in_waiting:
-        return ser.read_until('\n').decode()
-    return None
+        atexit.register(self.__del__)
 
+    def _get_answer(self):
+        if self.ser.in_waiting:
+            return self.ser.read_until('\n').decode()
+        return None
 
-def send_stuff(ch):
-    while True:
-        time.sleep(0.1)
+    def run(self):
 
-        r = random.randint(0, 0xFFF - 1)
-        m = make_msg(ch, r)
+        ch = 0
+        old_val = self.channels[ch]
 
-        send_msg(m)
+        while True:
 
-        time.sleep(0.001)
+            if (val := self.channels[ch]) == old_val:
+                time.sleep(0.0001)
+                continue
 
-        a = get_answer()
-        if a is not None:
-            print(a)
+            old_val = val
+            print(f'ch:{ch}, val:{val}')
+
+            msg = f'{ch},{val}\n'
+            self.ser.write(msg.encode())
+
+            time.sleep(0.001)
+
+            if (asw := self._get_answer()) is not None:
+                print(asw)
+
+    def __del__(self):
+        try:
+            del self.channels
+        except Exception:
+            pass
+        try:
+            self.ser.close()
+        except Exception:
+            pass
+
+    def close(self):
+        # this just calls,
+        # does not delete
+        self.__del__()
 
 
 if __name__ == '__main__':
-
-    try:
-        serial_setup()
-        send_stuff(0)
-    finally:
-        ser.close()
+    s = SerialDriver(shared_channels=True)
+    s.run()

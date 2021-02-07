@@ -31,7 +31,7 @@ def daemon_code():
         specific purpose, which is fulfilled with its end. Otherwise a infinite
         loop should be entered.
     """
-    import serial_driver_as_class as sd
+    import serial_driver as sd
     drv = sd.SerialDriver(force=True)
     drv.run()  # no return
 
