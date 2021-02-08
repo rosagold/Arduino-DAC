@@ -5,6 +5,7 @@ from common import _max_channels
 import logging
 import atexit
 
+DEFAULT_PORT = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
 logger = logging.getLogger(__name__)
 
 
@@ -25,11 +26,13 @@ class SerialDriver:
     """
 
     def __init__(self, force=False, shared_channels=False, **kwargs):
-        default_port = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
+
+        self._mem_obj = None
+        self.ser = None
 
         # if port is passed as kwarg the port is opened
         # in init, but we want to have more control
-        port = kwargs.pop("port", default_port)
+        port = kwargs.pop("port", DEFAULT_PORT)
 
         kwargs.setdefault('baudrate', 256000)
         kwargs.setdefault('parity', serial.PARITY_NONE)
@@ -56,12 +59,12 @@ class SerialDriver:
             mem_obj = _SharedChannels(create=True)
             channels = mem_obj.channels
         else:
-            mem_obj = np.zeros(_max_channels, dtype=int)
-            channels = mem_obj
+            mem_obj = None
+            channels = np.zeros(_max_channels, dtype=int)
 
-        self.ser = ser
         self._mem_obj = mem_obj
         self.channels = channels
+        self.ser = ser
 
         atexit.register(self.__del__)
 
@@ -82,37 +85,32 @@ class SerialDriver:
                 continue
 
             old_val = val
-            print(f'ch:{ch}, val:{val}')
+            logger.info(f'ch:{ch}, val:{val}')
 
             msg = f'{ch},{val}\n'
             self.ser.write(msg.encode())
 
             time.sleep(0.001)
 
+            # the uC only reports warnings and errors
             if (asw := self._get_answer()) is not None:
-                print(asw)
+                logging.warning(asw)
 
     def close(self):
-        try:
+
+        if self._mem_obj is not None:
             self._mem_obj.close()
-        except Exception:
-            pass
-        try:
+            self._mem_obj = None
+
+        if self.ser is not None:
             self.ser.close()
-        except Exception:
-            pass
+            self.ser = None
 
     def __del__(self):
         self.close()
 
 
 if __name__ == '__main__':
-    # import sys
-    # import os
-    # print(os.isatty(0))
-    # print(sys.__stdin__.isatty())
-    # print(sys.__stdout__.isatty())
-    import signal
     logging.basicConfig(level=logging.DEBUG)
     s = SerialDriver(shared_channels=True)
     try:

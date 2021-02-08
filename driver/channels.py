@@ -5,22 +5,102 @@ import multiprocessing.resource_tracker as resource_tracker
 from driver.common import _max_channels
 import numpy as np
 import logging
+from functools import wraps
 
 logger = logging.getLogger(__name__)
 
 _default_name = 'default_shared_list'
 
+_ST_RUNNING = 1
+_ST_CLOSED = 0
+
+
+def log_method_name(func):
+
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        logging.debug(f"{self.__class__.__name__}.{func.__name__}")
+        return func(self, *args, **kwargs)
+
+    return wrapper
+
+
+class _SharedMemoryServer(SharedMemory):
+
+    @log_method_name
+    def __init__(self, nbytes, name=None, force=False):
+        self._linked = False
+
+        if name is None:
+            name = _default_name
+
+        try:
+            super().__init__(name=name, create=True, size=nbytes)
+        except FileExistsError:
+            if not force:
+                raise
+            super().__init__(name=name)
+
+        self._linked = True
+        atexit.register(self.close)
+
+    @log_method_name
+    def close(self):
+        super().close()
+        if self._linked:
+            logging.debug(f"{self.__class__.__name__}: unlink shm")
+            self.unlink()
+        self._linked = False
+
+    @log_method_name
+    def __del__(self):
+        self.close()
+
+
+class _SharedMemoryClient(SharedMemory):
+
+    @log_method_name
+    def __init__(self, name=None):
+
+        self._registered = False
+
+        if name is None:
+            name = _default_name
+
+        try:
+            super().__init__(name=name)
+        except FileNotFoundError:
+            raise RuntimeError("connecting to shared_memory failed, probably no server running")
+
+        self._registered = True
+        atexit.register(self.close)
+
+    @log_method_name
+    def close(self):
+        super().close()
+
+        # see python bug #39959
+        # https://bugs.python.org/issue39959
+        if self._registered:
+            logging.debug(f"{self.__class__.__name__}: unregister from resource_tracker")
+            resource_tracker.unregister(self._name, "shared_memory")
+        self._registered = False
+
+    @log_method_name
+    def __del__(self):
+        self.close()
+
 
 class _SharedChannels:
 
     def __init__(self, name=None, create=False, dtype=np.int16):
+        logging.debug(f"{self.__class__.__name__}.__init__")
 
-        self._2nd = getattr(self, '_2nd', False)
         self._shm = None
         self._channels = None
         self._clients = None
-        self._alive = None
-        self._create = create
+        self._status = None
+        self._is_server = create
 
         if name is None:
             name = _default_name
@@ -29,47 +109,34 @@ class _SharedChannels:
         # we want to keep track how many clients have access
         # to the shared memory, so we hold this information
         # in the shared memory itself.
-        alive = np.array([0], dtype=np.int8)
+        st = np.array([0], dtype=np.int8)
         cl = np.array([0], dtype=np.int32)
-        ch_arr = np.array([0] * _max_channels, dtype=dtype)
-        nbytes = ch_arr.nbytes + cl.nbytes + alive.nbytes
+        ch = np.array([0] * _max_channels, dtype=dtype)
 
-        try:
-            self._shm = SharedMemory(create=create, size=nbytes, name=name)
-        except FileNotFoundError:
-            raise RuntimeError("no server. start a with create=True")
-        except FileExistsError:
-            if self._2nd:
-                raise
-            self._2nd = True
-            print('again')
-            self._shm = SharedMemory(name=name)
-            self._shm.close()
-            self._shm.unlink()
-            self.__init__(name=name, create=create, dtype=dtype)
-            return
+        if self._is_server:
+            nbytes = ch.nbytes + cl.nbytes + st.nbytes
+            self._shm = _SharedMemoryServer(nbytes, name=name)
+        else:
+            self._shm = _SharedMemoryClient(name=name)
 
-        # make numpy arrays for easy access
-        buffer = self._shm.buf[cl.nbytes + alive.nbytes:]
-        self._channels = np.ndarray(ch_arr.shape, dtype=ch_arr.dtype, buffer=buffer)
+        self._status = self._mk_shared_array(st, offset=0)
+        self._clients = self._mk_shared_array(cl, offset=st.nbytes)
+        self._channels = self._mk_shared_array(ch, offset=cl.nbytes + st.nbytes)
 
-        buffer = self._shm.buf[alive.nbytes:]
-        self._clients = np.ndarray(cl.shape, dtype=cl.dtype, buffer=buffer)
-
-        buffer = self._shm.buf
-        self._alive = np.ndarray(alive.shape, dtype=alive.dtype, buffer=buffer)
-
-        if self._create:
-            self._channels[:] = 0
+        if self._is_server:
+            self._status[:] = 1
             self._clients[:] = 0
-            self._alive[:] = 1
+            self._channels[:] = 0
             logger.info('server created')
 
         else:
-            self._clients[:] += 1
+            self._clients += 1
             logger.info(f'client created, we have now: {self.clients}')
 
-        atexit.register(self.close)
+    def _mk_shared_array(self, ref, offset):
+        buffer = self._shm.buf[offset:]
+        shape, dtype = ref.shape, ref.dtype
+        return np.ndarray(shape=shape, dtype=dtype, buffer=buffer)
 
     @property
     def channels(self):
@@ -80,35 +147,29 @@ class _SharedChannels:
         return self._clients[0]
 
     @property
-    def server_running(self):
-        return self._alive[0]
+    def status(self):
+        return self._status[0]
 
+    @log_method_name
     def close(self):
-        logger.debug(f'cleanup called')
 
         # prevent double cleanup
         if self._shm is None:
             return
 
-        if self._create:
-            logging.info(f'teardown server, active clients: {self.clients}')
-            self._alive[:] = 0
-            self._shm.close()
-            self._shm.unlink()
+        if self._is_server:
+            self._status[:] = 0
+            logging.info(f'-> teardown server, active clients: {self.clients}')
 
         else:
             self._clients -= 1
-            clients = self.clients
-            self._shm.close()
-            # see python bug #39959
-            # https://bugs.python.org/issue39959
-            resource_tracker.unregister(self._shm._name, "shared_memory")
-            logging.debug(f'closing client, left clients: {clients}')
+            logging.debug(f'-> closing client, left clients: {self.clients}')
 
+        self._shm.close()
         self._shm = None
 
+    @log_method_name
     def __del__(self):
-        logger.debug(f'_SharedChannels.__del__')
         self.close()
 
 
@@ -133,7 +194,7 @@ class Channel:
         self.vmax = vmax
 
     def _validate_connection(self):
-        if not self._shc.server_running:
+        if not self._shc.status:
             raise ConnectionAbortedError('server died. sorry.')
 
     def write(self, value):
@@ -155,13 +216,14 @@ class Channel:
     def _normalize(v, vmin, vmax, resmin, resmax):
         return resmin + (v - vmin) * (resmax - resmin) / (vmax - vmin)
 
+    @log_method_name
     def close(self):
-        if self._shc is not None:
-            self._shc.close()
+        self._shc.close()
 
+    @log_method_name
     def __del__(self):
-        logger.debug('Channel.__del__')
-        self.close()
+        if self._shc is not None:
+            self.close()
 
 
 if __name__ == '__main__':
