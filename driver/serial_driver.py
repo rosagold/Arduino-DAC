@@ -57,8 +57,8 @@ class SerialDriver:
         ser.reset_output_buffer()
 
         if shared_channels:
-            from driver.channels import _SharedChannels
-            mem_obj = _SharedChannels(create=True)
+            from driver.channels import SharedChannels
+            mem_obj = SharedChannels(create=True)
             channels = mem_obj.channels
         else:
             mem_obj = None

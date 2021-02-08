@@ -1,7 +1,7 @@
 import time
 import logging
 
-from driver.channels import _SharedChannels
+from driver.channels import SharedChannels
 
 logger = logging.getLogger(__name__)
 
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class TestDriver:
 
     def __init__(self):
-        self.mem_obj = _SharedChannels(create=True)
+        self.mem_obj = SharedChannels(create=True)
         self.channels = self.mem_obj.channels
 
     # noinspection PyTypeChecker

@@ -1,21 +1,25 @@
+__all__ = ['SharedChannels', 'Channel']
+
 import atexit
 import time
-from multiprocessing.shared_memory import ShareableList, SharedMemory
+from multiprocessing.shared_memory import SharedMemory
 import multiprocessing.resource_tracker as resource_tracker
 from driver.common import _max_channels
 import numpy as np
 import logging
 from functools import wraps
 
-logger = logging.getLogger(__name__)
-
 _default_name = 'default_shared_list'
+_SVR_RUNNING = 1
+_SVR_CLOSED = 0
 
-_ST_RUNNING = 1
-_ST_CLOSED = 0
+logger = logging.getLogger(__name__)
 
 
 def log_method_name(func):
+    """
+    Decorator that logs the method name on call
+    """
 
     @wraps(func)
     def wrapper(self, *args, **kwargs):
@@ -91,7 +95,7 @@ class _SharedMemoryClient(SharedMemory):
         self.close()
 
 
-class _SharedChannels:
+class SharedChannels:
 
     def __init__(self, name=None, create=False, dtype=np.int16):
         logging.debug(f"{self.__class__.__name__}.__init__")
@@ -124,7 +128,7 @@ class _SharedChannels:
         self._channels = self._mk_shared_array(ch, offset=cl.nbytes + st.nbytes)
 
         if self._is_server:
-            self._status[:] = 1
+            self._status[:] = _SVR_RUNNING
             self._clients[:] = 0
             self._channels[:] = 0
             logger.info('server created')
@@ -158,7 +162,7 @@ class _SharedChannels:
             return
 
         if self._is_server:
-            self._status[:] = 0
+            self._status[:] = _SVR_CLOSED
             logging.info(f'-> teardown server, active clients: {self.clients}')
 
         else:
@@ -183,7 +187,7 @@ class Channel:
         if not 0 <= nr < _max_channels:
             raise ValueError(f'nr out of bounds: 0 <= nr < {_max_channels}')
 
-        self._shc = _SharedChannels()
+        self._shc = SharedChannels()
         self.nr = nr
 
         self.ch_min = ch_min
@@ -194,7 +198,7 @@ class Channel:
         self.vmax = vmax
 
     def _validate_connection(self):
-        if not self._shc.status:
+        if not self._shc.status == _SVR_RUNNING:
             raise ConnectionAbortedError('server died. sorry.')
 
     def write(self, value):
@@ -203,6 +207,7 @@ class Channel:
         if self.normalize:
             value = self._normalize(value, self.vmin, self.vmax, self.ch_min, self.ch_max)
 
+        # ensure we not exceed the limits
         value = max(value, self.ch_min)
         value = min(value, self.ch_max)
 
@@ -227,7 +232,7 @@ class Channel:
 
 
 if __name__ == '__main__':
-    # shch = _SharedChannels(create=True)
+    # shch = SharedChannels(create=True)
     logging.basicConfig(level=logging.DEBUG)
     ch = Channel(0)
     for i in range(50):
