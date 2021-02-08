@@ -5,7 +5,9 @@ from common import _max_channels
 import logging
 import atexit
 
-DEFAULT_PORT = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
+# QinHeng Electronics HL-340 USB-Serial adapter, used in
+# Arduino Nano
+ARD_NANO_MAGIC_PORT = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +34,7 @@ class SerialDriver:
 
         # if port is passed as kwarg the port is opened
         # in init, but we want to have more control
-        port = kwargs.pop("port", DEFAULT_PORT)
+        port = kwargs.pop("port", ARD_NANO_MAGIC_PORT)
 
         kwargs.setdefault('baudrate', 256000)
         kwargs.setdefault('parity', serial.PARITY_NONE)
