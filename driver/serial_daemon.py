@@ -85,9 +85,10 @@ def start_daemon():
         with context:
             logger = logging.getLogger('serial_driver_daemon')
             logger.setLevel(logging.DEBUG)
-            fh = logging.FileHandler(_ERR_FILE, mode='w+')
+            fh = logging.FileHandler(_LOG_FILE, mode='w+')
             fh.setLevel(_LOG_LEVEL)
             logger.addHandler(fh)
+            logging.basicConfig(level=_LOG_LEVEL)
 
             try:
                 daemon_code()

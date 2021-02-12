@@ -52,7 +52,7 @@ class _SharedMemoryServer(SharedMemory):
     def close(self):
         super().close()
         if self._linked:
-            logging.debug(f"{self.__class__.__name__}: unlink shm")
+            logging.debug(f"{self.__class__.__name__}.close: unlink shared memory")
             self.unlink()
         self._linked = False
 
@@ -86,7 +86,7 @@ class _SharedMemoryClient(SharedMemory):
         # see python bug #39959
         # https://bugs.python.org/issue39959
         if self._registered:
-            logging.debug(f"{self.__class__.__name__}: unregister from resource_tracker")
+            logging.debug(f"{self.__class__.__name__}.close: unregister from resource_tracker")
             resource_tracker.unregister(self._name, "shared_memory")
         self._registered = False
 
@@ -97,8 +97,8 @@ class _SharedMemoryClient(SharedMemory):
 
 class SharedChannels:
 
-    def __init__(self, name=None, create=False, dtype=np.int16):
-        logging.debug(f"{self.__class__.__name__}.__init__")
+    @log_method_name
+    def __init__(self, name=None, create=False, dtype=np.int16, force=False):
 
         self._shm = None
         self._channels = None
@@ -119,7 +119,7 @@ class SharedChannels:
 
         if self._is_server:
             nbytes = ch.nbytes + cl.nbytes + st.nbytes
-            self._shm = _SharedMemoryServer(nbytes, name=name)
+            self._shm = _SharedMemoryServer(nbytes, name=name, force=force)
         else:
             self._shm = _SharedMemoryClient(name=name)
 
@@ -163,11 +163,11 @@ class SharedChannels:
 
         if self._is_server:
             self._status[:] = _SVR_CLOSED
-            logging.info(f'-> teardown server, active clients: {self.clients}')
+            logging.info(f'{self.__class__.__name__}.close: teardown server, active clients: {self.clients}')
 
         else:
             self._clients -= 1
-            logging.debug(f'-> closing client, left clients: {self.clients}')
+            logging.debug(f'{self.__class__.__name__}.close: closing client, left clients: {self.clients}')
 
         self._shm.close()
         self._shm = None

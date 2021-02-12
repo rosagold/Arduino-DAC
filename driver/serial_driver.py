@@ -27,7 +27,7 @@ class SerialDriver:
 
     """
 
-    def __init__(self, force=False, shared_channels=False, **kwargs):
+    def __init__(self, shared_channels=True, force=False, **kwargs):
 
         self._mem_obj = None
         self.ser = None
@@ -58,7 +58,7 @@ class SerialDriver:
 
         if shared_channels:
             from driver.channels import SharedChannels
-            mem_obj = SharedChannels(create=True)
+            mem_obj = SharedChannels(create=True, force=force)
             channels = mem_obj.channels
         else:
             mem_obj = None
@@ -114,7 +114,7 @@ class SerialDriver:
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-    s = SerialDriver(shared_channels=True)
+    s = SerialDriver()
     try:
         s.run()
     finally:
