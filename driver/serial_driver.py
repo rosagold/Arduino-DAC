@@ -1,14 +1,18 @@
+import sys
+
 import serial
 import time
 import numpy as np
 from common import _max_channels
-import logging
+import logging as _logging
 import atexit
 
 # QinHeng Electronics HL-340 USB-Serial adapter, used in
 # Arduino Nano
 ARD_NANO_MAGIC_PORT = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
-logger = logging.getLogger(__name__)
+logger = _logging.getLogger(__name__)
+
+MSG_SYNC_HEADER = (0xEEEE).to_bytes(length=2, byteorder='little')
 
 
 class SerialDriver:
@@ -67,36 +71,53 @@ class SerialDriver:
         self._mem_obj = mem_obj
         self.channels = channels
         self.ser = ser
+        self.reply = ''
 
         atexit.register(self.__del__)
 
-    def _get_answer(self):
-        if self.ser.in_waiting:
-            return self.ser.read_until('\n').decode()
-        return None
+    def _log_replies(self):
+
+        if inwait := self.ser.in_waiting:
+            self.reply += self.ser.read_until(serial.LF, inwait).decode()
+
+            *replies, self.reply = self.reply.split('\n')
+
+            # the uC only reports warnings and errors
+            for r in replies:
+                logger.warning(r)
+
+    def mk_msg(self):
+        channels = self.channels
+        logger.info(f'will send:{channels}')
+
+        # target, Arduino, is little endian
+        if sys.byteorder == 'big':
+            channels = channels.byteswap()
+
+        msg = MSG_SYNC_HEADER + channels.tobytes()
+        return msg
 
     def run(self):
 
-        ch = 0
-        old_val = self.channels[ch]
+        vals0 = self.channels.copy()
 
         while True:
 
-            if (val := self.channels[ch]) == old_val:
-                time.sleep(0.0001)
+            if all(vals0 == self.channels):
+                time.sleep(0.000000001)
+                self._log_replies()
                 continue
 
-            old_val = val
-            logger.info(f'ch:{ch}, val:{val}')
+            vals0[:] = self.channels
 
-            msg = f'{ch},{val}\n'
-            self.ser.write(msg.encode())
+            msg = self.mk_msg()
+            self.ser.write(msg)
+            logger.debug(f'wrote:{msg}')
 
-            time.sleep(0.001)
+            # wait for bytes to receive
+            # time.sleep(0.0005)
 
-            # the uC only reports warnings and errors
-            if (asw := self._get_answer()) is not None:
-                logging.warning(asw)
+            self._log_replies()
 
     def close(self):
 
@@ -113,7 +134,7 @@ class SerialDriver:
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
+    _logging.basicConfig(level=_logging.WARNING)
     s = SerialDriver()
     try:
         s.run()

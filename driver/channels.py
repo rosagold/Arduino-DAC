@@ -98,7 +98,7 @@ class _SharedMemoryClient(SharedMemory):
 class SharedChannels:
 
     @log_method_name
-    def __init__(self, name=None, create=False, dtype=np.int16, force=False):
+    def __init__(self, name=None, create=False, dtype=np.uint16, force=False):
 
         self._shm = None
         self._channels = None
@@ -114,7 +114,7 @@ class SharedChannels:
         # to the shared memory, so we hold this information
         # in the shared memory itself.
         st = np.array([0], dtype=np.int8)
-        cl = np.array([0], dtype=np.int32)
+        cl = np.array([0], dtype=np.uint16)
         ch = np.array([0] * _max_channels, dtype=dtype)
 
         if self._is_server:
