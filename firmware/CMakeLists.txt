@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8.4)
 set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/cmake/ArduinoToolchain.cmake)
 set(CMAKE_CXX_STANDARD 11)
-set(PROJECT_NAME untitled1)
+set(PROJECT_NAME firmware)
 
 
 set(${PROJECT_NAME}_BOARD nano)
@@ -31,7 +31,7 @@ set(${PROJECT_NAME}_SKETCH firmware.ino)
 
 #### Additional settings for programmer. From programmers.txt
 set(${PROJECT_NAME}_PROGRAMMER avrispmkii)
-set(${PROJECT_NAME}_PORT /dev/ttyUSB0)
+set(${PROJECT_NAME}_PORT /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0)
 set(nano.upload.speed 9600)
 
 ## Verbose build process
