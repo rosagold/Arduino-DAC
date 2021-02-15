@@ -6,6 +6,7 @@ import numpy as np
 from common import _max_channels
 import logging as _logging
 import atexit
+from channels import SharedChannels
 
 # QinHeng Electronics HL-340 USB-Serial adapter, used in
 # Arduino Nano
@@ -61,7 +62,6 @@ class SerialDriver:
         ser.reset_output_buffer()
 
         if shared_channels:
-            from driver.channels import SharedChannels
             mem_obj = SharedChannels(create=True, force=force)
             channels = mem_obj.channels
         else:

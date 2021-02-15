@@ -1,7 +1,7 @@
 import time
 import logging
 
-from driver.channels import SharedChannels
+from channels import SharedChannels
 
 logger = logging.getLogger(__name__)
 

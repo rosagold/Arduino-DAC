@@ -4,7 +4,7 @@ import atexit
 import time
 from multiprocessing.shared_memory import SharedMemory
 import multiprocessing.resource_tracker as resource_tracker
-from driver.common import _max_channels
+from common import _max_channels
 import numpy as np
 import logging
 from functools import wraps
