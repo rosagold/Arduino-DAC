@@ -9,6 +9,8 @@ const uint8_t P10 = 10;
 const uint32_t SPI_BAUD = 20000000;
 const unsigned long SERIAL_BAUD = 256000;
 
+const uint16_t SYNC_HEADER = 0xFFFF;
+
 // container for channels
 channel_t channels[NR_OF_CHANNELS] = {
         {.cs_pin = P10, .value = 0},
@@ -20,6 +22,8 @@ channel_t channels[NR_OF_CHANNELS] = {
 //#define DEBUG
 #define BIN_MESSAGE
 //#define STR_MESSAGE
+
+#define SERIAL_ERR  5
 
 
 
@@ -93,36 +97,17 @@ void setup() {
 
 #ifdef BIN_MESSAGE
 
+static inline uint8_t *find_sync(uint8_t *p, uint32_t sz){
+    return (uint8_t *) memmem(p, sz, &SYNC_HEADER, 2);
+}
 
-uint8_t *find_sync(uint8_t *start, uint8_t *end){
-    uint8_t *ptr = NULL;
-    uint32_t count = end - start;
-
-    // find the sync 2 bytes (0xFF,0xFF)
-    while (count > 0){
-
-        // find ptr to 0xFF
-        ptr = (uint8_t *) memchr(start, 0xFF, count);
-
-        // not found
-        if (!ptr){
-            break;
-        }
-
-        // found
-        if (*(ptr + 1) == 0xFF){
-            break;
-        }
-
-        // if we come here we found a 0xFF, but not
-        // the second, so it was probably just a value.
-        // We continue search maybe the sync bytes are
-        // later in the buffer.
-        start = ptr + 2;
-        count = end - start;
+uint8_t *find_last_sync(uint8_t *p, uint32_t sz) {
+    uint8_t *res = NULL;
+    while ((p = find_sync(p, sz)) != NULL) {
+        res = p++;
+        sz--;
     }
-
-    return ptr;
+    return res;
 }
 
 // find the Sync bytes in the current message and read
@@ -134,30 +119,23 @@ int8_t resync_serial(msg_t *broken){
     static uint32_t sz = sizeof(msg_t);
     uint8_t *head = (uint8_t *) broken;
     uint8_t *end = head + sz;
-    uint8_t *ptr = NULL;
-    uint8_t *tmp ;
-
-    // find the LAST sync
-    tmp = find_sync(head, end);
-    while (tmp) {
-        ptr = tmp;
-        tmp = find_sync(++tmp, end);
-    }
+    uint8_t *ptr;
 
     // copy from found sync byte up to end of the broken message to new buffer
-    if (ptr) {
-        memcpy()
-        for (; ptr < end ; ++head, ++ptr){
-            *head = *ptr;
-        }
+    if ((ptr = find_last_sync(head, sz)) != NULL) {
+        sz = end-ptr;
+        head = ((uint8_t *) (memmove(head, ptr, sz))) + sz;
     }
 
+    // wait and read the rest from serial
     sz = end - head;
     while (Serial.available() < sz){
         delay(1);
     }
-    sz = Serial.readBytes(&head, sz);
 
+    if (Serial.readBytes(head, sz) != sz){
+        return SERIAL_ERR;
+    }
     return 0;
 }
 
@@ -167,7 +145,7 @@ void loop() {
     static msg_t msg;
     static uint32_t msg_sz = sizeof(msg_t);
     static uint32_t nbytes;
-    static uint32_t err;
+    static uint32_t err = 0;
 
     if(Serial.available() >= msg_sz){
         err = 0;
@@ -175,13 +153,13 @@ void loop() {
         nbytes = Serial.readBytes((uint8_t *)&msg, msg_sz);
 
         if (nbytes != msg_sz){
-            err = 1;
+            err = SERIAL_ERR;
             goto error;
         }
 
         if (msg.sync != 0xFFFF){
-            err = resync_serial(&msg);
-            if (err){
+            ;
+            if ((err = resync_serial(&msg)) != 0{
                 goto error;
             }
         }
@@ -200,7 +178,16 @@ void loop() {
     return;
 
     error:
-    Serial.println("err");
+    switch (err) {
+        case 5:
+            Serial.print("serial read err ");
+        default:
+            Serial.print("err ");
+    }
+    Serial.print('(');
+    Serial.print(err);
+    Serial.println(')');
+
     Serial.flush();
 }
 #endif /* BIN_MESSAGE */
