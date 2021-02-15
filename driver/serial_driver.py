@@ -6,7 +6,7 @@ import random
 ser = serial.Serial()
 
 
-def serial_setup(port='/dev/ttyUSB3'):
+def serial_setup(port='/dev/ttyUSB0'):
     ser.port = port
     ser.baudrate = 256000
     ser.parity = serial.PARITY_NONE
@@ -26,7 +26,9 @@ def serial_setup(port='/dev/ttyUSB3'):
 
 
 def make_msg(ch, val):
-    return f'{ch},{val}\n'.encode()
+    print(val)
+    msg = f'{ch},{val}\n'
+    return msg.encode()
 
 
 def send_msg(m):
@@ -41,6 +43,8 @@ def get_answer():
 
 def send_stuff(ch):
     while True:
+        time.sleep(0.1)
+
         r = random.randint(0, 0xFFF - 1)
         m = make_msg(ch, r)
 
