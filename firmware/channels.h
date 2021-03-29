@@ -7,10 +7,9 @@
 
 #include "Arduino.h"
 
-#define  NR_OF_CHANNELS   8
-
 typedef struct {
-    int8_t cs_pin;
+    int8_t pin;
+    uint16_t ctrl;
     uint16_t value;
 } channel_t ;
 

@@ -2,12 +2,12 @@
 // increase buffer size
 //#define SERIAL_RX_BUFFER_SIZE 256
 #include "HardwareSerial.h"
-
 #include <SPI.h>
-#include "channels.h"
 #include "string.h"
+#include "number_of_channels.h"
+#include "channels.h"
 
-#define DEBUG_LEVEL   0
+#define DEBUG_LEVEL   1
 #include "serial_logging.h"
 
 
@@ -22,8 +22,8 @@
 #define SERIAL_ERR  5
 #define SERIAL_OVERFLOW_ERR  6
 
-static const uint8_t P3 = 3;
-static const uint8_t P10 = 10;
+#define MASK_12BIT 0x0FFF
+
 
 static const uint32_t SPI_BAUD = 20000000;
 static const unsigned long SERIAL_BAUD = 256000;
@@ -37,30 +37,49 @@ static const uint32_t OVERFLOW =  MSG_SZ * 3;
 
 
 // container for channels
+// ======================
+//
+// - .ctrl : defines first 4-bits, depending on the chip
+//
+//     REGISTER 5:
+//     WRITE COMMAND REGISTER FOR MCP4921 (12-BIT DAC)  [1]
+//     WRITE COMMAND REGISTER FOR MCP4922 (2-channel 12-BIT DAC)  [2]
+//      ____________________________________________________
+//     | nA/B | BUF | nGA | nSHDN |      D11:D0 (data)      |
+//     |----------------------------------------------------|
+//      15                                                 0
+//
+//     For [1] the first bit must be '0', otherwise the command is ignored
+//     For [2] the first bit select channel A ('0') or channel B ('1')
+//
+// - .pin : defines the chip select (CS) pin
+//      D7  - channel 4 / 5
+//      D8  - channel 2 / 3
+//      D9  - channel 1
+//      D10 - channel 0
+//      D11 - (reserved) MOSI (SPI-data)
+//      D12 - (NC)
+//      D13 - (reserved) SCK (SPI-clock)
+// - .value : hold the 12-bit value to analogize
+//
 channel_t channels[NR_OF_CHANNELS] = {
-        {.cs_pin = P10, .value = 0},
-        {.cs_pin = P3, .value = 0},
+        {.pin = 10, .ctrl = 0x3000, .value = 0},  // ch 0
+        {.pin = 9,  .ctrl = 0x3000, .value = 0},  // ch 1
+        {.pin = 8,  .ctrl = 0x3000, .value = 0},  // ch 2
+        {.pin = 8,  .ctrl = 0xB000, .value = 0},  // ch 3
+        {.pin = 7,  .ctrl = 0x3000, .value = 0},  // ch 4
+        {.pin = 7,  .ctrl = 0xB000, .value = 0},  // ch 5
 };
 
 
-
-uint8_t pins[NR_OF_CHANNELS] = {
-        P10,
-        P3,
-};
-
-
-static inline void spi_write(uint8_t cs_pin, uint16_t val){
-
-    val = val | 0x3000;
-
+static inline void spi_write(uint8_t pin, uint16_t val){
     // enable Chip Select
-    digitalWrite(cs_pin, LOW);
+    digitalWrite(pin, LOW);
 
     SPI.transfer16(val);
 
     // disable Chip Select
-    digitalWrite(cs_pin, HIGH);
+    digitalWrite(pin, HIGH);
 }
 
 
@@ -79,9 +98,7 @@ static inline void send_err(uint8_t err){
         default:
             Serial.print("read error");
     }
-    Serial.print("(");
-    Serial.print(err);
-    Serial.println(")");
+    Serial.print("(");Serial.print(err);Serial.println(")");
 }
 
 
@@ -93,8 +110,8 @@ void setup() {
 
     // init all chip selects
     for (channel_t ch : channels){
-        pinMode(ch.cs_pin, OUTPUT);
-        digitalWrite(ch.cs_pin, HIGH);
+        pinMode(ch.pin, OUTPUT);
+        digitalWrite(ch.pin, HIGH);
     }
 
     // Initializes the SPI bus by setting SCK, MOSI,
@@ -145,7 +162,7 @@ static inline void sync(void){
         b0 = Serial.read();
         b1 = Serial.read();
         if (b0 == sync[0] && b1 == sync[1]) {
-            break;
+            return;
         }
 
         // if we come here, we lost sync, we
@@ -154,11 +171,12 @@ static inline void sync(void){
         send_err(SYNC_ERR);
 
         while(true) {
+            _debugln(b0);
             _debuglog_buffer_fill();
 
             if (serial_wait(1)) {
-                // on error serial wait, flushes the rx
-                // buffer so we are maybe still not in sync,
+                // on error, serial_wait flushes the rx-
+                // buffer, so maybe we are still not in sync,
                 // but we can safely read 2 bytes now.
                 goto l_insync;
             }
@@ -166,7 +184,8 @@ static inline void sync(void){
             b0 = b1;
             b1 = Serial.read();
             if (b0 == sync[0] && b1 == sync[1]) {
-                break;
+                _debugln(b1);
+                return;
             }
         }
     }
@@ -179,6 +198,7 @@ void loop() {
     static uint32_t nbytes;
 
     sync();
+    _debugln("sync found");
 
     if(serial_wait(CONTENT_SZ)){
         return;
@@ -193,18 +213,12 @@ void loop() {
 
     for (uint8_t i = 0; i < NR_OF_CHANNELS; i++){
 
-        if (new_msg[i] == SYNC_HEADER){
+        _debug("ch");_debug(i);_debug(": ");_debugln(new_msg[i]);
 
-        }
-
-        if ((new_msg[i] == old_msg[i]) || (pins[i] == NOT_A_PIN)){
+        if ((new_msg[i] == old_msg[i]) || (channels[i].pin == NOT_A_PIN)){
             continue;
         }
-        spi_write(pins[i], new_msg[i]);
-        _log("ch");
-        _log(i);
-        _log(": ");
-        _logln(new_msg[i]);
+        spi_write(channels[i].pin, channels[i].ctrl | (new_msg[i] & MASK_12BIT));
     }
 
     memcpy((uint8_t *)old_msg, (uint8_t*)new_msg, CONTENT_SZ);
@@ -258,7 +272,7 @@ void loop() {
 
         // all ok
         if (ch >= 0){
-            spi_write(channels[ch].cs_pin, channels[ch].value);
+            spi_write(channels[ch].pin, channels[ch].value);
 
         // something went wrong
         } else {
