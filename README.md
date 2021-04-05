@@ -101,4 +101,5 @@ Good to Know
   
 Known Bugs
 ----------
-Currently, this project only work for `8` channels. 
+Currently, the firmware only work for `8` channels, even if the board is build with
+only 6 physical channels.
