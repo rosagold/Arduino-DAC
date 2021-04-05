@@ -4,7 +4,7 @@ import atexit
 import time
 from multiprocessing.shared_memory import SharedMemory
 import multiprocessing.resource_tracker as resource_tracker
-from common import _max_channels
+from driver.common import _max_channels
 import numpy as np
 import logging
 from functools import wraps
@@ -211,6 +211,7 @@ class Channel:
         value = max(value, self.ch_min)
         value = min(value, self.ch_max)
 
+        logger.info(f"ch0: {value}")
         self._shc.channels[self.nr] = value
 
     def read(self):
@@ -229,6 +230,25 @@ class Channel:
     def __del__(self):
         if self._shc is not None:
             self.close()
+
+
+class DummyChannel(Channel):
+    def __init__(
+        self, nr, ch_min=0, ch_max=4095, normalize=False, vmin=None, vmax=None
+    ):
+        class Dummmmy:
+            def __init__(self):
+                self.channels = [0] * _max_channels
+                self.status = _SVR_RUNNING
+            def close(self):
+                pass
+        self._shc = Dummmmy()
+        self.nr = nr
+        self.ch_min = ch_min
+        self.ch_max = ch_max
+        self.normalize = normalize
+        self.vmin = vmin
+        self.vmax = vmax
 
 
 if __name__ == '__main__':
